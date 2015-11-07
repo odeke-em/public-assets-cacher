@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	expirableCache "github.com/odeke-em/cache"
@@ -20,6 +21,7 @@ const (
 )
 
 var MaxThresholdCacheSize = int64(80 * MByte)
+var _30MinuteDuration = 30 * time.Minute
 
 var globalDataCache = expirableCache.New()
 
@@ -28,7 +30,7 @@ func relToPublicPath(p string) string {
 }
 
 func newExpirableValue30MinuteOffset(data interface{}) *expirableCache.ExpirableValue {
-	return expirableCache.NewExpirableValueWithOffset(data, uint64(time.Hour))
+	return expirableCache.NewExpirableValueWithOffset(data, uint64(_30MinuteDuration))
 }
 
 func retrievePublicResource(subPath string) (data string, err error) {
@@ -141,6 +143,12 @@ func publicDirCacheEvicter(done chan bool) {
 	}()
 }
 
+func headerShallowCopy(from, to http.Header) {
+	for k, v := range from {
+		to.Set(k, strings.Join(v, ","))
+	}
+}
+
 func rootHandler(res http.ResponseWriter, req *http.Request) {
 	url := req.URL.String()
 	if url == "" || url == "/" {
@@ -152,6 +160,13 @@ func rootHandler(res http.ResponseWriter, req *http.Request) {
 		http.Error(res, "error encountered please try again", 500)
 		return
 	}
+
+	headers := map[string][]string{
+		"Cache-Control": []string{fmt.Sprintf("max-age=%v", uint64(_30MinuteDuration/time.Second))},
+	}
+
+	headerShallowCopy(headers, res.Header())
+	res.WriteHeader(200)
 
 	fmt.Fprintf(res, "%s", data)
 }
